@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>魔方公式双向翻译</title>
+<title>谁用谁是SB</title>
 <style>
   :root { --yellow:#e6a700; --ink:#222; --bad:#d93025; --line:#dcdcdc; --bg:#f7f8fa; }
   * { box-sizing:border-box; }
@@ -97,7 +97,8 @@
       <div class="formula-list" id="formula-list"></div>
     </div>
     <div class="dialog-foot">
-      <button id="pick-keep">只填入</button>
+      <butto n id="pick-keep">填入不关闭
+      hjkl;io </button>
       <button class="primary" id="pick-close">填入并关闭</button>
     </div>
   </div>
@@ -437,8 +438,8 @@ function update() {
   let html = result ? `<span>${escapeHtml(result)}</span>` : "";
   if (bad.length) {
     const uniq = [...new Set(bad)];
-    html += `<span class="bad">　无法识别：${escapeHtml(uniq.join(""))}</span>`;
-    statusEl.textContent = `有 ${uniq.length} 种无法识别的字符`;
+    html += `<span class="bad">　你TM输错了：${escapeHtml(uniq.join(""))}</span>`;
+    statusEl.textContent = `有 ${uniq.length} 种输错的`;
   } else {
     statusEl.textContent = result ? `结果 ${result.length} 个字符` : "等待输入…";
   }
@@ -451,7 +452,7 @@ document.getElementById("btn-clear").addEventListener("click", () => {
   editor.innerHTML = "";
   marks.clear();
   output.innerHTML = "";
-  statusEl.textContent = "等待输入…";
+  statusEl.textContent = "赶紧输!";
 });
 
 /* ================= 公式库 ================= */
