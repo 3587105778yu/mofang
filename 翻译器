@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>魔方公式双向翻译</title>
+<style>
+  :root { --yellow:#e6a700; --ink:#222; --bad:#d93025; --line:#dcdcdc; --bg:#f7f8fa; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+         background:var(--bg); color:var(--ink); }
+  .wrap { max-width:860px; margin:0 auto; padding:18px 16px 40px; }
+  h1 { font-size:24px; margin:8px 0 4px; }
+  .hint { font-size:14px; color:#666; margin-bottom:14px; line-height:1.6; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+  .label { font-size:15px; }
+  button { font-family:inherit; font-size:15px; padding:8px 16px;
+           border:1px solid var(--line); background:#fff; border-radius:8px; cursor:pointer; }
+  button:hover { background:#eef1f5; }
+  button.primary { background:#3a7be0; border-color:#3a7be0; color:#fff; }
+  button.primary:hover { background:#2f68c0; }
+  .modes button.active { background:#3a7be0; border-color:#3a7be0; color:#fff; }
+  #editor { min-height:56px; padding:12px 14px; background:#fff;
+            border:1px solid var(--line); border-radius:8px; font-size:20px;
+            line-height:1.4; outline:none; word-break:break-all; white-space:pre-wrap; }
+  #editor:focus { border-color:#3a7be0; }
+  #editor .wide { color:var(--yellow); }
+  #editor:empty::before { content:attr(data-placeholder); color:#aaa; pointer-events:none; }
+  .out-box { background:#fff; border:1px solid var(--line); border-radius:8px;
+             padding:12px 14px; min-height:80px; font-size:24px; font-weight:700;
+             line-height:1.5; word-break:break-all; }
+  .out-box .wide { color:var(--yellow); }
+  .out-box .bad { color:var(--bad); text-decoration:underline; }
+  .status { font-size:13px; color:#777; margin-top:6px; min-height:18px; }
+  .mask { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none;
+          align-items:center; justify-content:center; padding:16px; }
+  .mask.show { display:flex; }
+  .dialog { width:100%; max-width:720px; max-height:88vh; background:#fff;
+            border-radius:12px; display:flex; flex-direction:column; overflow:hidden;
+            box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .dialog-head { padding:14px 16px; border-bottom:1px solid var(--line);
+                 display:flex; justify-content:space-between; align-items:center; }
+  .dialog-head h2 { font-size:17px; margin:0; }
+  .dialog-body { flex:1; overflow:auto; padding:12px 16px; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .tabs button.active { background:#3a7be0; border-color:#3a7be0; color:#fff; }
+  .formula-list { display:flex; flex-direction:column; gap:6px; }
+  .formula-item { text-align:left; font-size:15px; padding:10px 12px;
+                  border:1px solid var(--line); border-radius:8px;
+                  background:#fafafa; cursor:pointer; line-height:1.5; }
+  .formula-item:hover { background:#eef4ff; border-color:#b9cdf0; }
+  .formula-item .name { color:#333; font-weight:600; }
+  .formula-item .formula { color:#3a7be0; font-weight:600; margin-left:8px;
+                           font-family:Consolas,monospace; }
+  .formula-item .desc { display:block; color:#777; font-size:13px; margin-top:3px; }
+  .dialog-foot { padding:12px 16px; border-top:1px solid var(--line);
+                 display:flex; justify-content:flex-end; gap:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>魔方公式双向翻译</h1>
+  <div class="hint">
+    字母 → 中文：小写或加 w（如 Rw）表示转两层，结果标黄。<br>
+    中文 → 字母：输入 w 会把前一个字标黄（=转两层，输出小写字母）。<br>
+    两个字的动作必须写作 [左下] [下勾] [后起]；整体转动写作 [整体往上] 等。
+  </div>
+
+  <div class="row modes">
+    <span class="label">方向：</span>
+    <button id="btn-en2cn" class="active" data-mode="en2cn">字母 → 中文</button>
+    <button id="btn-cn2en" data-mode="cn2en">中文 → 字母</button>
+  </div>
+
+  <div class="row"><span class="label" id="input-label">公式：</span></div>
+  <div id="editor" contenteditable="true" data-placeholder="输入公式或中文"></div>
+
+  <div class="row" style="margin-top:10px;">
+    <button class="primary" id="btn-translate">翻译</button>
+    <button id="btn-library">公式库</button>
+    <button id="btn-clear">清空</button>
+  </div>
+
+  <div class="row"><span class="label">翻译结果：</span></div>
+  <div class="out-box" id="output"></div>
+  <div class="status" id="status">等待输入…</div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="dialog">
+    <div class="dialog-head">
+      <h2>公式库</h2>
+      <button id="dialog-close">关闭</button>
+    </div>
+    <div class="dialog-body">
+      <div class="tabs" id="tabs"></div>
+      <div class="formula-list" id="formula-list"></div>
+    </div>
+    <div class="dialog-foot">
+      <button id="pick-keep">只填入</button>
+      <button class="primary" id="pick-close">填入并关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= 映射表 ================= */
+const EN2CN = {
+  "U":"左",  "U'":"右",
+  "L":"左下","L'":"左上",
+  "R":"上",  "R'":"下",
+  "F":"压",  "F'":"提",
+  "D":"下勾","D'":"下左",
+  "B":"后",  "B'":"后起",
+  "M":"中下","M'":"中上",
+  "S":"中压","S'":"中提",
+  "E":"中勾","E'":"中回",
+  "x":"整体往上","x'":"整体往下",
+  "y":"整体往右","y'":"整体往左",
+  "z":"整体压",  "z'":"整体提",
+};
+
+// 反向表：中文 -> 字母（现在无冲突）
+const CN2EN = {};
+for (const [k,v] of Object.entries(EN2CN)) CN2EN[v] = k;
+
+// 单字动作无需括号；两个字及以上必须 []
+const CN_WORDS  = Object.keys(CN2EN).sort((a,b) => b.length - a.length);
+const CN_SINGLE = CN_WORDS.filter(w => w.length === 1);
+const CN_DOUBLE = CN_WORDS.filter(w => w.length >= 2);
+
+// 正向记号：面 + 可选撇 + 可选数字；含整体转动 x/y/z
+const TOKEN_RE = /([UDLRFBMESxyzudlrfbmes])('?)(\d*)/g;
+
+function wrapAction(word) {
+  return word.length > 1 ? `[${word}]` : word;
+}
+
+/* ================= 正向：字母 -> 中文 ================= */
+function normalizeW(formula) {
+  formula = formula.replace(/’/g, "'");
+  let prev = null;
+  const pat = /([UDLRFBMESxyz])('?)(\d?)\s*[wW]/g;
+  while (prev !== formula) {
+    prev = formula;
+    formula = formula.replace(pat, (m,f,p,n) => f.toLowerCase() + p + n);
+  }
+  return formula;
+}
+
+function translateToken(tok) {
+  TOKEN_RE.lastIndex = 0;
+  const m = TOKEN_RE.exec(tok);
+  if (!m || m[0] !== tok) return [tok, false];
+  const face = m[1], prime = m[2], num = m[3];
+
+  const isRot = /[xyz]/i.test(face);
+  const wide = !isRot && face === face.toLowerCase() && face !== face.toUpperCase();
+
+  const key = isRot ? face.toLowerCase() + prime : face.toUpperCase() + prime;
+  const baseWord = EN2CN[key] ?? tok;
+
+  let text = wrapAction(baseWord);
+  if (num === "2") text = text + text;
+  else if (num !== "" && num !== "1") text = text.repeat(parseInt(num, 10));
+  return [text, wide];
+}
+
+function translateFormula(formula) {
+  formula = normalizeW(formula);
+  TOKEN_RE.lastIndex = 0;
+  const toks = formula.match(TOKEN_RE) || [];
+  return toks.map(translateToken);
+}
+
+/* ================= 反向：中文 -> 字母 =================
+ * 单字动作直接写；两字及以上必须 [ ]
+ */
+function cnToLetter(text, wideIdxSet) {
+  const tokens = [];
+  let i = 0;
+  const n = text.length;
+  const isSep = ch => /[\s，,、；;。.]/.test(ch);
+
+  while (i < n) {
+    const ch = text[i];
+    if (isSep(ch)) { i++; continue; }
+
+    if (ch === "[") {
+      const close = text.indexOf("]", i + 1);
+      if (close === -1) {
+        tokens.push({ type:"bad", word:"[" });
+        i++;
+        continue;
+      }
+      const inner = text.slice(i + 1, close);
+      let matched = null;
+      for (const w of CN_DOUBLE) if (inner === w) { matched = w; break; }
+      if (!matched) for (const w of CN_SINGLE) if (inner === w) { matched = w; break; }
+      if (!matched) {
+        tokens.push({ type:"bad", word: inner || "[]" });
+        i = close + 1;
+        continue;
+      }
+      const wide = wideIdxSet.has(i + 1);
+      tokens.push({ type:"action", word: matched, wide });
+      i = close + 1;
+      continue;
+    }
+
+    let matched = null;
+    for (const w of CN_SINGLE) if (text.startsWith(w, i)) { matched = w; break; }
+    if (!matched) {
+      tokens.push({ type:"bad", word: ch });
+      i++;
+      continue;
+    }
+    const wide = wideIdxSet.has(i);
+    tokens.push({ type:"action", word: matched, wide });
+    i += matched.length;
+  }
+
+  const out = [], bad = [];
+  for (const t of tokens) {
+    if (t.type === "bad") { bad.push(...t.word); continue; }
+    const letter = CN2EN[t.word];
+    out.push(t.wide ? letter.toLowerCase() : letter);
+  }
+
+  // 相邻相同动作合并（勾勾 → U2）
+  const merged = [];
+  let k = 0;
+  while (k < out.length) {
+    let cnt = 1;
+    while (k + cnt < out.length && out[k + cnt] === out[k]) cnt++;
+    if (cnt === 1) merged.push(out[k]);
+    else if (cnt === 2) merged.push(out[k] + "2");
+    else merged.push(out[k] + cnt);
+    k += cnt;
+  }
+  return [merged.join(""), bad];
+}
+
+/* ================= 公式库 ================= */
+const FORMULAS = {
+  "Cross": [
+    ["白棱在顶层，翻到底层","F2","白棱在顶层且白色朝上，做两次 F 直接翻到底层。"],
+    ["白棱在中层，顺插到底","R' D' R","白棱卡在中层、白色朝右，先抬开再插入底层右前方。"],
+    ["白棱在中层，逆插到底","R' D R","同上但白色朝左，换 D 方向插入。"],
+    ["白棱在底层但方向反了","F' U' R U","白棱在底层但白色朝下，先提出来再插入。"],
+    ["白棱在底层位置对、方向反","F' R' D' R","位置对但翻转 180°，用这组翻正。"],
+    ["调整底层十字（换棱）","D R' D' R","底层某条棱位置错了，转 D 换位后归位。"],
+    ["顶层白棱插入（右侧）","R' D' R","白棱在顶层右侧，白色朝前，从右侧插入。"],
+    ["顶层白棱插入（左侧）","L D L'","白棱在顶层左侧，从左侧插入，与右侧对称。"],
+  ],
+  "F2L": [
+    ["基础入槽（角在右）","U R U' R'","角块在顶层右前、白面朝右，棱块已就位时的标准入槽。"],
+    ["基础入槽（角在左）","U' F' U F","角块在顶层左前、白面朝左，左侧标准入槽。"],
+    ["角块已归位，棱块在上","R U R'","角块已在槽里，棱块在顶层，用这组插进去。"],
+    ["角块朝前","R U' R'","角块白面朝前，先转出再归位。"],
+    ["先分离再入槽","R U2 R' U' R U R'","角棱已粘住但方向不对，先分离再入槽。"],
+    ["棱角已连好","F' U' F","角棱连成一对，整体放进槽。"],
+    ["白面朝前","U' R U R' U R U' R'","角块白面朝前且棱块在上，较长但通用。"],
+    ["白面朝右","U F' U' F U' F' U F","角块白面朝右，先调整顶层再入槽。"],
+  ],
+  "OLL": [
+    ["点形 1","F R U R' U' F'","顶面只有中心块（点形），先把点变成一字/十字。"],
+    ["点形 2","F U R U' R' F'","点形另一种朝向，与点形 1 配合。"],
+    ["#21 十字","R U2 R' U' R U R' U' R U' R'","OLL 第 21 号，十字形，缺口在左前。"],
+    ["#22 十字","R U2 R2 U' R2 U' R2 U2 R","OLL 第 22 号，十字形，缺口在右前。"],
+    ["#23 十字","R2 D' R U2 R' D R U2 R","OLL 第 23 号，十字形，带 D 层调整。"],
+    ["#24 十字","r U R' U' r' F R F'","OLL 第 24 号，十字形，用宽层 r 简化。"],
+    ["#25 十字","F' r U R' U' r' F R","OLL 第 25 号，十字形，与 24 号镜像。"],
+    ["#26 十字","R U2 R' U' R U' R'","OLL 第 26 号，十字形，缺口在右后。"],
+    ["#27 十字（小鱼）","R U R' U R U2 R'","OLL 第 27 号，最经典的小鱼公式。"],
+    ["#45 小拐角","F R U R' U' F'","OLL 第 45 号，拐角形，顶面有一个 2x2 块。"],
+  ],
+  "PLL": [
+    ["Ua（三棱轮换）","R U' R U R U R U' R' U' R2","三个棱块逆时针轮换，角块已归位。"],
+    ["Ub（三棱轮换）","R2 U R U R' U' R' U' R' U R'","与 Ua 方向相反的三棱轮换。"],
+    ["H（四棱对换）","M2 U M2 U2 M2 U M2","顶层四条棱两两对换，用 M2 完成。"],
+    ["Z（相邻棱对换）","M' U M2 U M2 U M' U2 M2","相邻两条棱对换，M 层配合 U。"],
+    ["Aa（角三循环）","x R' U R' D2 R U' R' D2 R2","三个角块顺时针轮换，带整体转 x。"],
+    ["Ab（角三循环）","x R2 D2 R U R' D2 R U' R","与 Aa 方向相反的角三循环。"],
+    ["T（角棱交换）","R U R' U' R' F R2 U' R' U' R U R' F'","一对角块和一对棱块同时交换，很常用。"],
+    ["Y（对角交换）","F R U' R' U' R U R' F' R U R' U' R' F R F'","对角两块互换，公式较长但通用。"],
+    ["Ja","R' U L' U2 R U' R' U2 R L","两个相邻角块交换，一侧棱块已归位。"],
+    ["Jb","R U R' F' R U R' U' R' F R2 U' R'","与 Ja 镜像的相邻角块交换。"],
+    ["Ra","R U' R' U' R U R D R' U' R D' R' U2 R'","带 D 层动作的角棱交换，注意 D 与 D' 配合。"],
+    ["Rb","R' U2 R U2 R' F R U R' U' R' F' R2","与 Ra 镜像，用 F 辅助。"],
+    ["F（棱角交换）","R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R","棱和角各一对交换，公式较长。"],
+    ["V","R' U R' U' R D' R' D R' U D' R2 U' R2 D R2","两组对角块交换，带多个 D 层动作。"],
+    ["Na","R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'","相邻两组互换，较长。"],
+    ["Nb","R' U R U' R' F' U' F R U R' F R' F' R U' R","与 Na 镜像。"],
+    ["E（双对角交换）","x' R U' R' D R U R' D' R U R' D R U' R' D'","两组对角块同时交换，带整体转 x'。"],
+    ["Ga","R2 U R' U R' U' R U' R2 U' D R' U R D'","G 系列之一，一组角棱互换。"],
+    ["Gb","R' U' R U D' R2 U R' U R U' R U' R2 D","G 系列，与 Ga 镜像。"],
+    ["Gc","R2 U' R U' R U R' U R2 U D' R U' R' D","G 系列，注意 U/D 配合。"],
+    ["Gd","R U R' U' D R2 U' R U' R' U R' U R2 D'","G 系列，与 Gc 镜像。"],
+  ],
+};
+
+/* ================= 状态 ================= */
+let mode = "en2cn";
+const marks = new Set();
+const editor = document.getElementById("editor");
+const output = document.getElementById("output");
+const statusEl = document.getElementById("status");
+const inputLabel = document.getElementById("input-label");
+const btnEn2cn = document.getElementById("btn-en2cn");
+const btnCn2en = document.getElementById("btn-cn2en");
+
+function setMode(m) {
+  mode = m;
+  btnEn2cn.classList.toggle("active", m === "en2cn");
+  btnCn2en.classList.toggle("active", m === "cn2en");
+  inputLabel.textContent = m === "en2cn" ? "公式：" : "中文：";
+  update();
+}
+btnEn2cn.addEventListener("click", () => setMode("en2cn"));
+btnCn2en.addEventListener("click", () => setMode("cn2en"));
+
+/* ================= 编辑区 ================= */
+function getRawText() {
+  return editor.innerText.replace(/\u00a0/g, " ").replace(/\n$/, "");
+}
+function setRawText(text) {
+  editor.innerHTML = "";
+  editor.appendChild(document.createTextNode(text));
+}
+function renderEditor() {
+  const raw = getRawText();
+  const sel = saveSelection();
+  editor.innerHTML = "";
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    const isWide = mode === "cn2en" && marks.has(i);
+    if (isWide) {
+      const span = document.createElement("span");
+      span.className = "wide";
+      span.textContent = ch;
+      editor.appendChild(span);
+    } else {
+      editor.appendChild(document.createTextNode(ch));
+    }
+  }
+  restoreSelection(sel);
+}
+function saveSelection() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!editor.contains(r.startContainer)) return null;
+  return { offset: getCaretOffset() };
+}
+function restoreSelection(saved) {
+  if (saved) placeCaretAt(saved.offset);
+}
+function getCaretOffset() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return 0;
+  const r = sel.getRangeAt(0).cloneRange();
+  r.selectNodeContents(editor);
+  r.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+  return r.toString().length;
+}
+function placeCaretAt(offset) {
+  const sel = window.getSelection();
+  const range = document.createRange();
+  let remaining = offset;
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    if (remaining <= node.textContent.length) {
+      range.setStart(node, remaining);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    remaining -= node.textContent.length;
+    node = walker.nextNode();
+  }
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/* ================= 输入事件：w 标黄 ================= */
+editor.addEventListener("input", () => {
+  if (mode === "cn2en") {
+    const raw = getRawText();
+    if (/[wW]/.test(raw)) {
+      const newMarks = new Set();
+      let out = "";
+      for (let j = 0; j < raw.length; j++) {
+        const ch = raw[j];
+        if (ch === "w" || ch === "W") {
+          let k = out.length - 1;
+          while (k >= 0 && /[\s，,、；;。.\]\[]/.test(out[k])) k--;
+          if (k >= 0) newMarks.add(k);
+          continue;
+        }
+        if (marks.has(j)) newMarks.add(out.length);
+        out += ch;
+      }
+      setRawText(out);
+      marks.clear();
+      newMarks.forEach(m => marks.add(m));
+      renderEditor();
+      update();
+      return;
+    }
+  }
+  renderEditor();
+  update();
+});
+
+/* ================= 翻译输出 ================= */
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function update() {
+  const raw = getRawText();
+
+  if (mode === "en2cn") {
+    const items = translateFormula(raw);
+    output.innerHTML = items.length
+      ? items.map(([t,w]) => `<span class="${w?"wide":""}">${escapeHtml(t)}</span>`).join(" ")
+      : "";
+    statusEl.textContent = items.length ? `共 ${items.length} 个记号` : "等待输入…";
+    return;
+  }
+
+  const [result, bad] = cnToLetter(raw, marks);
+  let html = result ? `<span>${escapeHtml(result)}</span>` : "";
+  if (bad.length) {
+    const uniq = [...new Set(bad)];
+    html += `<span class="bad">　无法识别：${escapeHtml(uniq.join(""))}</span>`;
+    statusEl.textContent = `有 ${uniq.length} 种无法识别的字符`;
+  } else {
+    statusEl.textContent = result ? `结果 ${result.length} 个字符` : "等待输入…";
+  }
+  output.innerHTML = html || "";
+}
+
+/* ================= 按钮 ================= */
+document.getElementById("btn-translate").addEventListener("click", update);
+document.getElementById("btn-clear").addEventListener("click", () => {
+  editor.innerHTML = "";
+  marks.clear();
+  output.innerHTML = "";
+  statusEl.textContent = "等待输入…";
+});
+
+/* ================= 公式库 ================= */
+const mask = document.getElementById("mask");
+const tabsEl = document.getElementById("tabs");
+const listEl = document.getElementById("formula-list");
+let currentCat = Object.keys(FORMULAS)[0];
+let currentPick = null;
+
+function buildTabs() {
+  tabsEl.innerHTML = "";
+  Object.keys(FORMULAS).forEach(cat => {
+    const b = document.createElement("button");
+    b.textContent = cat;
+    b.className = cat === currentCat ? "active" : "";
+    b.addEventListener("click", () => {
+      currentCat = cat;
+      buildTabs();
+      buildList();
+    });
+    tabsEl.appendChild(b);
+  });
+}
+function buildList() {
+  listEl.innerHTML = "";
+  FORMULAS[currentCat].forEach(([name, formula, desc]) => {
+    const b = document.createElement("button");
+    b.className = "formula-item";
+    b.innerHTML =
+      `<span class="name">${escapeHtml(name)}</span>` +
+      `<span class="formula">${escapeHtml(formula)}</span>` +
+      `<span class="desc">${escapeHtml(desc)}</span>`;
+    b.addEventListener("click", () => {
+      currentPick = formula;
+      [...listEl.children].forEach(c => c.style.background = "#fafafa");
+      b.style.background = "#e6f0ff";
+    });
+    b.addEventListener("dblclick", () => applyPick(formula, true));
+    listEl.appendChild(b);
+  });
+}
+function applyPick(formula, close) {
+  setMode("en2cn");
+  setRawText(formula);
+  marks.clear();
+  renderEditor();
+  update();
+  if (close) mask.classList.remove("show");
+}
+document.getElementById("btn-library").addEventListener("click", () => {
+  currentCat = Object.keys(FORMULAS)[0];
+  currentPick = null;
+  buildTabs();
+  buildList();
+  mask.classList.add("show");
+});
+document.getElementById("dialog-close").addEventListener("click", () => mask.classList.remove("show"));
+document.getElementById("pick-keep").addEventListener("click", () => {
+  if (currentPick) applyPick(currentPick, false);
+});
+document.getElementById("pick-close").addEventListener("click", () => {
+  if (currentPick) applyPick(currentPick, true);
+  else mask.classList.remove("show");
+});
+mask.addEventListener("click", e => {
+  if (e.target === mask) mask.classList.remove("show");
+});
+
+/* ================= 初始化 ================= */
+setMode("en2cn");
+</script>
+</body>
+</html>
